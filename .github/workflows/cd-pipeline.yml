@@ -14,12 +14,15 @@ on: # rebuild any PRs and main branch changes
       - 'bitnami/discourse/**'
       - 'bitnami/dokuwiki/**'
       - 'bitnami/drupal/**'
+      - 'bitnami/ejbca/**'
       - 'bitnami/elasticsearch/**'
       - 'bitnami/etcd/**'
       - 'bitnami/external-dns/**'
       - 'bitnami/fluentd/**'
+      - 'bitnami/geode/**'
       - 'bitnami/ghost/**'
       - 'bitnami/grafana-loki/**'
+      - 'bitnami/grafana-operator/**'
       - 'bitnami/grafana/**'
       - 'bitnami/haproxy/**'
       - 'bitnami/haproxy-intel/**'
@@ -42,11 +45,13 @@ on: # rebuild any PRs and main branch changes
       - 'bitnami/mongodb/**'
       - 'bitnami/mongodb-sharded/**'
       - 'bitnami/moodle/**'
+      - 'bitnami/mxnet/**'
       - 'bitnami/mysql/**'
       - 'bitnami/nats/**'
       - 'bitnami/nginx-intel/**'
       - 'bitnami/nginx/**'
       - 'bitnami/node/**'
+      - 'bitnami/node-exporter/**'
       - 'bitnami/odoo/**'
       - 'bitnami/opencart/**'
       - 'bitnami/osclass/**'
@@ -56,7 +61,10 @@ on: # rebuild any PRs and main branch changes
       - 'bitnami/phpmyadmin/**'
       - 'bitnami/pinniped/**'
       - 'bitnami/postgresql/**'
+      - 'bitnami/postgresql-ha/**'
       - 'bitnami/prestashop/**'
+      - 'bitnami/pytorch/**'
+      - 'bitnami/rabbitmq-cluster-operator/**'
       - 'bitnami/rabbitmq/**'
       - 'bitnami/redis-cluster/**'
       - 'bitnami/redis/**'
@@ -69,6 +77,7 @@ on: # rebuild any PRs and main branch changes
       - 'bitnami/spring-cloud-dataflow/**'
       - 'bitnami/suitecrm/**'
       - 'bitnami/tensorflow-resnet/**'
+      - 'bitnami/thanos/**'
       - 'bitnami/tomcat/**'
       - 'bitnami/wildfly/**'
       - 'bitnami/wordpress/**'
@@ -87,7 +96,7 @@ jobs:
       chart: ${{ steps.get-chart.outputs.chart }}
       result: ${{ steps.get-chart.outputs.result }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           path: charts
           fetch-depth: 2 # to be able to obtain files changed in the latest commit
@@ -129,15 +138,28 @@ jobs:
     if: ${{ needs.get-chart.outputs.result == 'ok' }}
     name: VIB Publish
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         name: Checkout Repository
         with:
           path: charts
+      - id: get-asset-vib-config
+        name: Get asset-specific configuration for VIB action
+        run: |
+          config_file="charts/.vib/${{ needs.get-chart.outputs.chart }}/vib-action.config"
+
+          # Supported configuration customizations and default values
+          verification_mode="PARALLEL"
+
+          if [[ -f $config_file ]]; then
+            verification_mode="$(cat $config_file | grep 'verification-mode' | cut -d'=' -f2)"
+          fi
+          echo "::set-output name=verification_mode::${verification_mode}"
       - uses: vmware-labs/vmware-image-builder-action@main
         name: Verify and publish ${{ needs.get-chart.outputs.chart }}
         with:
           pipeline: ${{ needs.get-chart.outputs.chart }}/vib-publish.json
           config: charts/.vib/
+          verification-mode: ${{ steps.get-asset-vib-config.outputs.verification_mode }}
         env:
           VIB_ENV_TARGET_PLATFORM: ${{ secrets.VIB_ENV_TARGET_PLATFORM }}
           VIB_ENV_ALTERNATIVE_TARGET_PLATFORM: ${{ secrets.VIB_ENV_ALTERNATIVE_TARGET_PLATFORM }}
@@ -154,7 +176,7 @@ jobs:
         with:
           path: ~/artifacts
       # If we perform a checkout of the master branch, we will find conflicts with the submodules
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           ref: 'index'
           path: index
@@ -163,7 +185,8 @@ jobs:
       - name: Install and configure aws-cli and helm
         run: |
           # AWS CLI
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y awscli
+          export DEBIAN_FRONTEND=noninteractive
+          sudo apt-get update && sudo apt-get install -y awscli
           aws configure set region us-east-1
           aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -217,7 +240,7 @@ jobs:
     steps:
       - name: Notify in Slack channel
         if: ${{ needs.vib-publish.result != 'success' || needs.update-index.result != 'success' }}
-        uses: slackapi/slack-github-action@v1.19.0
+        uses: slackapi/slack-github-action@v1.23.0
         with:
           channel-id: ${{ secrets.CD_SLACK_CHANNEL_ID }}
           payload: |
